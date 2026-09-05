@@ -1,0 +1,25 @@
+.DS_Store
+**/.DS_Store
+
+# Local builds and emulator output
+game/build/
+game/*.elf
+game/*.gba
+game/*.map
+game/*.sav
+game/*.ss*
+
+# Showcase tooling/output
+site/node_modules/
+site/dist/
+site/public/downloads/*.gba
+
+# Generated validation evidence not kept as canonical captures
+game/validation/screenshots/
+game/validation/native/mgba-smoke-result.txt
+
+# Local test and editor state
+.cache/
+__pycache__/
+*.py[cod]
+*.log
