@@ -1,0 +1,2 @@
+# Checks used by tools/verify_rom.py. Pinned; installed from the release index.
+uppercut-gba-rom-verify==0.1.0

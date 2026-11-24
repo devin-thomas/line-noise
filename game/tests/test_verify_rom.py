@@ -13,6 +13,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from tools import verify_rom  # noqa: E402
+from uppercut_gba_rom_verify import (  # noqa: E402
+    ValidationError,
+    calculate_header_complement,
+    validate_elf_bytes,
+    validate_rom_bytes,
+    validate_rom_file,
+)
 
 
 NINTENDO_LOGO = bytes.fromhex(
@@ -71,7 +78,7 @@ def make_valid_elf() -> bytearray:
 
 class RomValidationTests(unittest.TestCase):
     def test_accepts_release_header(self) -> None:
-        info = verify_rom.validate_rom_bytes(bytes(make_valid_rom()))
+        info = validate_rom_bytes(bytes(make_valid_rom()), verify_rom.CARTRIDGE)
 
         self.assertEqual(info.title, "LINE NOISE!")
         self.assertEqual(info.game_code, "LNSE")
@@ -90,35 +97,35 @@ class RomValidationTests(unittest.TestCase):
             with self.subTest(field=message):
                 rom = make_valid_rom()
                 rom[offset : offset + len(replacement)] = replacement
-                with self.assertRaisesRegex(verify_rom.ValidationError, message):
-                    verify_rom.validate_rom_bytes(bytes(rom))
+                with self.assertRaisesRegex(ValidationError, message):
+                    validate_rom_bytes(bytes(rom), verify_rom.CARTRIDGE)
 
     def test_rejects_wrong_title_with_other_header_fields_valid(self) -> None:
         rom = make_valid_rom()
         rom[0xA0:0xAC] = b"LINE NOISE?\x00"
         rom[0xBD] = 0xBA
 
-        with self.assertRaisesRegex(verify_rom.ValidationError, "title"):
-            verify_rom.validate_rom_bytes(bytes(rom))
+        with self.assertRaisesRegex(ValidationError, "title"):
+            validate_rom_bytes(bytes(rom), verify_rom.CARTRIDGE)
 
     def test_rejects_wrong_complement_checksum(self) -> None:
         rom = make_valid_rom()
         rom[0xBD] = 0xD9
 
-        with self.assertRaisesRegex(verify_rom.ValidationError, "complement checksum"):
-            verify_rom.validate_rom_bytes(bytes(rom))
+        with self.assertRaisesRegex(ValidationError, "complement checksum"):
+            validate_rom_bytes(bytes(rom), verify_rom.CARTRIDGE)
 
     def test_rejects_short_and_misaligned_roms(self) -> None:
-        with self.assertRaisesRegex(verify_rom.ValidationError, "ROM size"):
-            verify_rom.validate_rom_bytes(bytes(0xBF))
+        with self.assertRaisesRegex(ValidationError, "ROM size"):
+            validate_rom_bytes(bytes(0xBF), verify_rom.CARTRIDGE)
 
-        with self.assertRaisesRegex(verify_rom.ValidationError, "4-byte aligned"):
-            verify_rom.validate_rom_bytes(bytes(make_valid_rom()) + b"\x00")
+        with self.assertRaisesRegex(ValidationError, "4-byte aligned"):
+            validate_rom_bytes(bytes(make_valid_rom()) + b"\x00", verify_rom.CARTRIDGE)
 
 
 class ElfValidationTests(unittest.TestCase):
     def test_accepts_executable_load_segment_covering_entry(self) -> None:
-        info = verify_rom.validate_elf_bytes(bytes(make_valid_elf()))
+        info = validate_elf_bytes(bytes(make_valid_elf()))
 
         self.assertEqual(info.entry_point, 0x08000000)
         self.assertEqual(info.load_segment_count, 1)
@@ -130,37 +137,37 @@ class ElfValidationTests(unittest.TestCase):
         struct.pack_into("<H", elf, 44, 0)
 
         with self.assertRaisesRegex(
-            verify_rom.ValidationError, "program header|entry point"
+            ValidationError, "program header|entry point"
         ):
-            verify_rom.validate_elf_bytes(bytes(elf))
+            validate_elf_bytes(bytes(elf))
 
     def test_rejects_truncated_program_header_table(self) -> None:
         elf = make_valid_elf()[:60]
 
-        with self.assertRaisesRegex(verify_rom.ValidationError, "program header table"):
-            verify_rom.validate_elf_bytes(bytes(elf))
+        with self.assertRaisesRegex(ValidationError, "program header table"):
+            validate_elf_bytes(bytes(elf))
 
     def test_rejects_entry_outside_executable_load_segment(self) -> None:
         elf = make_valid_elf()
         struct.pack_into("<I", elf, 24, 0x02000000)
 
-        with self.assertRaisesRegex(verify_rom.ValidationError, "entry point"):
-            verify_rom.validate_elf_bytes(bytes(elf))
+        with self.assertRaisesRegex(ValidationError, "entry point"):
+            validate_elf_bytes(bytes(elf))
 
     def test_rejects_entry_in_uninitialized_tail_of_executable_segment(self) -> None:
         elf = make_valid_elf()
         struct.pack_into("<I", elf, 24, 0x08000003)
         struct.pack_into("<I", elf, 68, 2)
 
-        with self.assertRaisesRegex(verify_rom.ValidationError, "entry point"):
-            verify_rom.validate_elf_bytes(bytes(elf))
+        with self.assertRaisesRegex(ValidationError, "entry point"):
+            validate_elf_bytes(bytes(elf))
 
     def test_rejects_load_segment_past_end_of_file(self) -> None:
         elf = make_valid_elf()
         struct.pack_into("<I", elf, 56, 0x1000)
 
-        with self.assertRaisesRegex(verify_rom.ValidationError, "extends past"):
-            verify_rom.validate_elf_bytes(bytes(elf))
+        with self.assertRaisesRegex(ValidationError, "extends past"):
+            validate_elf_bytes(bytes(elf))
 
     def test_rejects_wrong_elf_identity_fields(self) -> None:
         cases = (
@@ -172,14 +179,14 @@ class ElfValidationTests(unittest.TestCase):
             with self.subTest(field=message):
                 elf = make_valid_elf()
                 elf[offset] = replacement
-                with self.assertRaisesRegex(verify_rom.ValidationError, message):
-                    verify_rom.validate_elf_bytes(bytes(elf))
+                with self.assertRaisesRegex(ValidationError, message):
+                    validate_elf_bytes(bytes(elf))
 
 
 class FileAndCliTests(unittest.TestCase):
     def test_file_reader_reports_missing_artifact(self) -> None:
-        with self.assertRaisesRegex(verify_rom.ValidationError, "cannot read ROM"):
-            verify_rom.validate_rom_file("definitely-missing-line-noise.gba")
+        with self.assertRaisesRegex(ValidationError, "cannot read ROM"):
+            validate_rom_file("definitely-missing-line-noise.gba", verify_rom.CARTRIDGE)
 
     def test_main_reports_success_and_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
